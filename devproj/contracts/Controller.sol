@@ -2,6 +2,7 @@
 pragma solidity ^0.8.9;
 
 import "@openzeppelin/contracts/access/Ownable.sol";
+// import "hardhat/console.sol";
 
 interface CoreLike {
     function fund(address user, uint256 collateral, uint256 debt) external returns(
@@ -55,10 +56,11 @@ contract Controller is Ownable {
     function defund(uint256 collateral, uint256 debt) external payable {
         address sender = msg.sender;
         uint256 balance = _coin.balanceOf(sender);
-        require(balance <= debt, "Controller/Insufficient balance");
+        require(balance >= debt, "Controller/Insufficient balance");
 
         _core.defund(sender, collateral, debt);
         _coin.burn(sender, debt);
+        payable(sender).transfer(collateral);
     }
 
     function kick(address user, uint256 liqdebt) external payable {

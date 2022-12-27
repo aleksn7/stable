@@ -5,6 +5,7 @@ pragma solidity ^0.8.9;
 import "./Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
+// import "hardhat/console.sol";
 
 contract Core is Ownable, Pausable, Math {
     struct CDP {
@@ -56,6 +57,11 @@ contract Core is Ownable, Pausable, Math {
     function setLiquidateFee(uint256 fee) public onlyOwner {
         liquidateFee = fee;
     }
+
+    function getBalance(address user) public view returns(uint256, uint256) {
+        CDP storage cdp = cdps[user];
+        return (cdp.collateral, cdp.debt);
+    }
  
     function fund(address user, uint256 collateral, uint256 debt) 
         external 
@@ -65,13 +71,13 @@ contract Core is Ownable, Pausable, Math {
         uint256, // CDP total collateral
         uint256  // CDP total debt
     ) {
-        CDP memory cdp = cdps[user];
+        CDP storage cdp = cdps[user];
 
         cdp.owner = user;
         cdp.collateral = add(cdp.collateral, collateral);
 
         int256 availableDebt = _calculateDebt(cdp);
-        require(availableDebt > 0, "Core/Negative available debt");
+        require(availableDebt >= 0, "Core/Negative available debt");
         require(uint256(availableDebt) >= debt, "Core/Exceed debt limit");
     
         cdp.debt = add(cdp.debt, debt);
@@ -92,7 +98,7 @@ contract Core is Ownable, Pausable, Math {
         uint256, // CDP 
         uint256  //
     ){
-        CDP memory cdp = cdps[user];
+        CDP storage cdp = cdps[user];
         require(cdp.owner != address(0), "Core/CDP doesn't exist");
 
         require(cdp.debt > debt, "Core/Negative CDP debt");
@@ -124,7 +130,7 @@ contract Core is Ownable, Pausable, Math {
         uint256 liquidatorMargin,
         uint256 debtorCashback
     ) {
-        CDP memory cdp = cdps[user];
+        CDP storage cdp = cdps[user];
 
         int256 debt = _calculateDebt(cdp);
         require(debt < 0, "Core/None zero debt");
