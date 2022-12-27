@@ -5,6 +5,8 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 // import "hardhat/console.sol";
 
 interface CoreLike {
+    function setCollateralPrice(uint256 price) external;
+
     function fund(address user, uint256 collateral, uint256 debt) external returns(
         uint256, // collateral
         uint256  // debt
@@ -15,7 +17,7 @@ interface CoreLike {
         uint256   // debt
     );
 
-    function kickvidate(address user, uint256 liqdebt) external returns(
+    function liquidate(address liquidator, address user, uint256 liqdebt) external returns(
         uint256 liquidatorCashback,
         uint256 liquidatorMargin,
         uint256 debtorCashback
@@ -45,6 +47,10 @@ contract Controller is Ownable {
         _coin = CoinLike(coin);
     }
 
+    function setCollateralPrice(uint256 price) external {
+        _core.setCollateralPrice(price);
+    }
+
     function fund(uint256 debt) external payable {
         address sender = msg.sender;
         uint256 collateral = msg.value;
@@ -66,12 +72,12 @@ contract Controller is Ownable {
     function kick(address user, uint256 liqdebt) external payable {
         address sender = msg.sender;
         uint256 balance = _coin.balanceOf(sender);
-        require(balance <= liqdebt, "Controller/Insufficient balance");
+        require(balance >= liqdebt, "Controller/Insufficient balance");
 
         uint256 liquidatorCashback;
         uint256 liquidatorMargin;
         uint256 debtorCashback;
-        (liquidatorCashback, liquidatorMargin, debtorCashback) = _core.kickvidate(user, liqdebt);
+        (liquidatorCashback, liquidatorMargin, debtorCashback) = _core.liquidate(sender, user, liqdebt);
 
         require(liqdebt >= debtorCashback, "Controller/Negative debtor");
 

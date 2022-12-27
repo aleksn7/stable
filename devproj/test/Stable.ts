@@ -2,9 +2,16 @@ import { time, loadFixture } from "@nomicfoundation/hardhat-network-helpers";
 import { anyValue } from "@nomicfoundation/hardhat-chai-matchers/withArgs";
 import { expect } from "chai";
 import { ethers } from "hardhat";
+import { any } from "hardhat/internal/core/params/argumentTypes";
 
 const TOKEN_PRECISION = Math.pow(10, 18);
-const RATE_PRECISION = Math.pow(10, 27);
+const RATE_PRECISION = Math.pow(10, 18);
+
+const MAX_DEBT = BigInt(50000 * TOKEN_PRECISION);
+const MAX_DEBT_PER_CDP = BigInt(5000 * TOKEN_PRECISION);
+const COLLATERAL_RATE = BigInt(2 * RATE_PRECISION);
+const COLLATERAL_PRICE = BigInt(5 * RATE_PRECISION);
+const LIQUIDATE_FEE = BigInt(2 * RATE_PRECISION / 10);
 
 async function deployCoin() {
   const Token = await ethers.getContractFactory("Coin");
@@ -14,12 +21,6 @@ async function deployCoin() {
 }
 
 async function deployCore() {
-  const MAX_DEBT = (50000 * TOKEN_PRECISION).toLocaleString('fullwide', {useGrouping:false});
-  const MAX_DEBT_PER_CDP = (5000 * TOKEN_PRECISION).toLocaleString('fullwide', {useGrouping:false});
-  const COLLATERAL_RATE = (2 * RATE_PRECISION).toLocaleString('fullwide', {useGrouping:false});
-  const COLLATERAL_PRICE = (5 * RATE_PRECISION).toLocaleString('fullwide', {useGrouping:false});
-  const LIQUIDATE_FEE = (2 * RATE_PRECISION / 10).toLocaleString('fullwide', {useGrouping:false});
-
   const Core = await ethers.getContractFactory("Core");
   const core = await Core.deploy(
     MAX_DEBT, MAX_DEBT_PER_CDP, COLLATERAL_RATE, COLLATERAL_PRICE, LIQUIDATE_FEE);
@@ -47,11 +48,11 @@ describe("Stable", function () {
     await coin.transferOwnership(controller.address);
     await core.transferOwnership(controller.address);
 
-    return {controller, core};
+    return {controller, core, coin};
   }
 
   describe("Fund", function () {
-    it("Should be right balance", async function () {
+    it("Should be funded", async function () {
       const tests = [
         {
           collateral: BigInt(50 * TOKEN_PRECISION),
@@ -59,26 +60,31 @@ describe("Stable", function () {
         },
         {
           collateral: BigInt(50 * TOKEN_PRECISION),
-          debt: BigInt(50 * TOKEN_PRECISION),
+          debt: BigInt(125 * TOKEN_PRECISION),
         }
       ];
       
       const signers = await ethers.getSigners();
       const signer = signers[0];
       for (let test of tests) {
-        const {controller, core} = await loadFixture(deployControlerFixture);
-
-        await controller
-          .connect(signer)
-          .fund(test.debt, {value: test.collateral});
-
-        const balance = await core.getBalance(signer.getAddress());
-        expect(test.collateral).to.equal(balance[0]);
-        expect(test.debt).to.equal(balance[1]);
+        const {controller, core, coin} = await loadFixture(deployControlerFixture);
+        
+        await expect(
+          controller
+            .connect(signer)
+            .fund(test.debt, {value: test.collateral})
+        ).to.changeTokenBalance(coin, signer, test.debt)
+         .to.changeEtherBalance(signer, -test.collateral)
+         .to.emit(core, "CDPFunded").withArgs(signer.address, test.collateral, test.debt);
+        expect(
+          (await core.getBalance(signer.getAddress())).map((elem) => {
+            return elem.toBigInt();
+          })
+        ).to.deep.equal([test.collateral, test.debt]);
       }
     });
 
-    it("Should be reverted while funding", async function () {
+    it("Should be reverted", async function () {
       const tests = [
         {
           collateral: BigInt(0),
@@ -109,31 +115,6 @@ describe("Stable", function () {
         ).to.be.revertedWith(test.reason);
       }
     });
-
-    // it("Should set the right owner", async function () {
-    //   const { lock, owner } = await loadFixture(deployOneYearLockFixture);
-
-    //   expect(await lock.owner()).to.equal(owner.address);
-    // });
-
-    // it("Should receive and store the funds to lock", async function () {
-    //   const { lock, lockedAmount } = await loadFixture(
-    //     deployOneYearLockFixture
-    //   );
-
-    //   expect(await ethers.provider.getBalance(lock.address)).to.equal(
-    //     lockedAmount
-    //   );
-    // });
-
-    // it("Should fail if the unlockTime is not in the future", async function () {
-    //   // We don't use the fixture here because we want a different deployment
-    //   const latestTime = await time.latest();
-    //   const Lock = await ethers.getContractFactory("Lock");
-    //   await expect(Lock.deploy(latestTime, { value: 1 })).to.be.revertedWith(
-    //     "Unlock time should be in the future"
-    //   );
-    // });
   });
 
   describe("Defund", function () {
@@ -150,28 +131,29 @@ describe("Stable", function () {
       const signers = await ethers.getSigners();
       const signer = signers[0];
       for (let test of tests) {
-        const {controller, core} = await loadFixture(deployControlerFixture);
+        const {controller, core, coin} = await loadFixture(deployControlerFixture);
         
         await controller
           .connect(signer)
           .fund(test.debt, {value: test.collateral});
 
-        const balanceBefore = await signer.getBalance();
-        await controller
-          .connect(signer)
-          .defund(test.defundCollateral, test.defundDebt);
-        const balanceAfter = await signer.getBalance();
+        await expect(
+          controller
+            .connect(signer)
+            .defund(test.defundCollateral, test.defundDebt)
+        ).to.changeTokenBalance(coin, signer, -test.defundDebt)
+         .to.changeEtherBalances([signer, controller], [test.defundCollateral, -test.defundCollateral])
+         .to.emit(core, "CDPDefunded").withArgs(signer.address, test.defundCollateral, test.defundDebt);
 
-        const balance = await core.getBalance(signer.getAddress());
-        expect(BigInt(TOKEN_PRECISION)).to.greaterThan(
-          test.defundCollateral - (balanceAfter.toBigInt() - balanceBefore.toBigInt())
-        );
-        expect(test.collateral - test.defundCollateral).to.equal(balance[0]);
-        expect(test.debt -  test.defundDebt).to.equal(balance[1]);
+        expect(
+          (await core.getBalance(signer.getAddress())).map((elem) => {
+            return elem.toBigInt();
+          })
+        ).to.deep.equal([test.collateral - test.defundCollateral, test.debt -  test.defundDebt]);
       }
     });
 
-    it("Should be reverted while defunding", async function () {
+    it("Should be reverted", async function () {
       const tests = [
         {
           collateral: BigInt(50 * TOKEN_PRECISION),
@@ -197,7 +179,6 @@ describe("Stable", function () {
         await controller
           .connect(signer)
           .fund(test.debt, {value: test.collateral});
-
         await expect(
           controller
             .connect(signer)
@@ -205,59 +186,74 @@ describe("Stable", function () {
         ).to.revertedWith(test.reason);
       }
     });
+  });
+  describe("Liquidate", function () {
+    it("Should be liquidated", async function () {
+      const tests = [
+        {
+          collateral: BigInt(50 * TOKEN_PRECISION),
+          debt: BigInt(125 * TOKEN_PRECISION),
+          newPrice: COLLATERAL_PRICE / BigInt(2),
+          liqDebt: BigInt(625 * TOKEN_PRECISION / 10) + BigInt(125 * TOKEN_PRECISION),
+        }
+      ];
+      
+      const signers = await ethers.getSigners();
+      const owner = signers[0];
+      const debtor = signers[0];
+      const liquidator = signers[1];
+      for (let test of tests) {
+        const {controller, core, coin} = await loadFixture(deployControlerFixture);
 
-      // it("Should revert with the right error if called from another account", async function () {
-      //   const { lock, unlockTime, otherAccount } = await loadFixture(
-      //     deployOneYearLockFixture
-      //   );
+        await controller
+          .connect(debtor)
+          .fund(test.debt, {value: test.collateral});
+        await controller
+          .connect(liquidator)
+          .fund(test.liqDebt, {value: BigInt(2) * test.collateral});
+        await controller
+          .connect(owner)
+          .setCollateralPrice(test.newPrice);
+        
+        await expect(
+          controller
+            .connect(liquidator)
+            .kick(debtor.address, test.liqDebt)
+        ).to.changeTokenBalance(coin, liquidator, -test.liqDebt)
+          .to.changeEtherBalance(liquidator, BigInt(50 * TOKEN_PRECISION))
+          .to.emit(core, "CDPDeleted").withArgs(debtor.address)
+          .to.emit(core, "CDPLiquidated").withArgs(liquidator.address, debtor.address, test.liqDebt, anyValue, anyValue, anyValue);
+      }
+    });
 
-      //   // We can increase the time in Hardhat Network
-      //   await time.increaseTo(unlockTime);
-
-      //   // We use lock.connect() to send a transaction from another account
-      //   await expect(lock.connect(otherAccount).withdraw()).to.be.revertedWith(
-      //     "You aren't the owner"
-      //   );
-      // });
-
-      // it("Shouldn't fail if the unlockTime has arrived and the owner calls it", async function () {
-      //   const { lock, unlockTime } = await loadFixture(
-      //     deployOneYearLockFixture
-      //   );
-
-      //   // Transactions are sent using the first signer by default
-      //   await time.increaseTo(unlockTime);
-
-      //   await expect(lock.withdraw()).not.to.be.reverted;
-      // });
-
-  //   describe("Events", function () {
-  //     it("Should emit an event on withdrawals", async function () {
-  //       const { lock, unlockTime, lockedAmount } = await loadFixture(
-  //         deployOneYearLockFixture
-  //       );
-
-  //       await time.increaseTo(unlockTime);
-
-  //       await expect(lock.withdraw())
-  //         .to.emit(lock, "Withdrawal")
-  //         .withArgs(lockedAmount, anyValue); // We accept any value as `when` arg
-  //     });
-  //   });
-
-  //   describe("Transfers", function () {
-  //     it("Should transfer the funds to the owner", async function () {
-  //       const { lock, unlockTime, lockedAmount, owner } = await loadFixture(
-  //         deployOneYearLockFixture
-  //       );
-
-  //       await time.increaseTo(unlockTime);
-
-  //       await expect(lock.withdraw()).to.changeEtherBalances(
-  //         [owner, lock],
-  //         [lockedAmount, -lockedAmount]
-  //       );
-  //     });
-  //   });
+    it("Should be reverted", async function () {
+      const tests = [
+        {
+          collateral: BigInt(50 * TOKEN_PRECISION),
+          debt: BigInt(125 * TOKEN_PRECISION),
+          newPrice: COLLATERAL_PRICE / BigInt(2),
+          liqDebt: BigInt(625 * TOKEN_PRECISION / 10) + BigInt(125 * TOKEN_PRECISION),
+          reason: "Core/None debt here"
+        }
+      ];
+      
+      const signers = await ethers.getSigners();
+      const debtor = signers[0];
+      const liquidator = signers[1];
+      for (let test of tests) {
+        const {controller} = await loadFixture(deployControlerFixture);
+        await controller
+          .connect(debtor)
+          .fund(test.debt, {value: test.collateral});
+        await controller
+          .connect(liquidator)
+          .fund(test.liqDebt, {value: BigInt(2) * test.collateral});
+        await expect(
+          controller
+            .connect(liquidator)
+            .kick(debtor.address, test.liqDebt)
+        ).to.revertedWith(test.reason);
+      }
+    });
   });
 });

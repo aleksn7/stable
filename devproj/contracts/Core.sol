@@ -5,7 +5,7 @@ pragma solidity ^0.8.9;
 import "./Math.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/security/Pausable.sol";
-// import "hardhat/console.sol";
+import "hardhat/console.sol";
 
 contract Core is Ownable, Pausable, Math {
     struct CDP {
@@ -41,20 +41,20 @@ contract Core is Ownable, Pausable, Math {
     constructor(uint256 md, uint256 mdc, uint256 r, uint256 p, uint256 f) {
         maxDebt = md;
         maxDebtCDP = mdc;
-        setCollateralRate(r);
-        setCollateralPrice(p);
-        setLiquidateFee(f);
+        collateralRate = r;
+        collateralPrice = p;
+        liquidateFee = f;
     }
 
-    function setCollateralRate(uint256 rate) public onlyOwner {
+    function setCollateralRate(uint256 rate) external onlyOwner {
         collateralRate = rate;
     }
 
-    function setCollateralPrice(uint256 price) public onlyOwner {
+    function setCollateralPrice(uint256 price) external onlyOwner {
         collateralPrice = price;
     }
 
-    function setLiquidateFee(uint256 fee) public onlyOwner {
+    function setLiquidateFee(uint256 fee) external onlyOwner {
         liquidateFee = fee;
     }
 
@@ -121,7 +121,7 @@ contract Core is Ownable, Pausable, Math {
         return (cdp.collateral, cdp.debt);
     }
 
-    function kickvidate(address liquidator, address user, uint256 liqdebt) 
+    function liquidate(address liquidator, address user, uint256 liqdebt) 
         external 
         onlyOwner 
         whenNotPaused 
@@ -133,7 +133,7 @@ contract Core is Ownable, Pausable, Math {
         CDP storage cdp = cdps[user];
 
         int256 debt = _calculateDebt(cdp);
-        require(debt < 0, "Core/None zero debt");
+        require(debt < 0, "Core/None debt here");
 
         require(debt + int256(liqdebt) >= int256(cdp.debt), "Core/Negative liquidator cashback");
         liquidatorCashback = uint256(debt + int256(liqdebt) - int256(cdp.debt));
@@ -158,7 +158,7 @@ contract Core is Ownable, Pausable, Math {
     }
 
     function _calculateCollateral(CDP memory cdp) private view returns (uint256) {
-        return sub(cdp.collateral, cdp.debt) / collateralPrice;
+        return sub(cdp.collateral, wdiv(cdp.debt, collateralPrice));
     }
 
     function _calculateDebt(CDP memory cdp) private view returns (int256) {
