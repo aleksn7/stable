@@ -1,15 +1,16 @@
 import { ethers } from "hardhat";
 
-const CONTROLLER_ADDRESS = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
-const TOKEN_PRECISION = Math.pow(10, 18);
+const CORE_ADDRESS = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
 
 async function main() {
-  const controller = await ethers.getContractAt("Controller", CONTROLLER_ADDRESS);
+  const core = await ethers.getContractAt("Core", CORE_ADDRESS);
   const signers = await ethers.getSigners();
 
-  await controller
+  const price = await core
     .connect(signers[0])
-    .fund((5 * TOKEN_PRECISION).toLocaleString('fullwide', {useGrouping:false}));
+    .collateralPrice();
+
+  console.log(price);
 }
 
 // We recommend this pattern to be able to use async/await everywhere

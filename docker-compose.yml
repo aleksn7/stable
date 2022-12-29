@@ -1,6 +1,13 @@
 version: "3.9"
 
 services:
+  daemon:
+    build: ./daemon
+    environment:
+      - RPC_HOST=http://hardhat:8545
+      - CONTROLLER_ADDRESS="your address"
+      - PRIVATE_KEY="your priavate"
+
   hardhat:
     image: aleksn7/hardhat:latest
     ports:
