@@ -14,12 +14,12 @@ Network Info
   Stable
     Fund
       ✔ Should be funded (854ms)
-      ✔ Should be reverted (83ms)
+      ✔ Should be reverted (80ms)
     Defund
-      ✔ Should be defunded (81ms)
-      ✔ Should be reverted (118ms)
+      ✔ Should be defunded (76ms)
+      ✔ Should be reverted (88ms)
     Liquidate
-      ✔ Should be liquidated (133ms)
+      ✔ Should be liquidated (98ms)
       ✔ Should be reverted (69ms)
 
 
@@ -28,16 +28,14 @@ Network Info
 -----------------|----------|----------|----------|----------|----------------|
 File             |  % Stmts | % Branch |  % Funcs |  % Lines |Uncovered Lines |
 -----------------|----------|----------|----------|----------|----------------|
- contracts/      |    86.11 |    44.74 |    72.22 |     81.9 |                |
+ contracts/      |    93.94 |    53.13 |    83.87 |    89.58 |                |
   Coin.sol       |      100 |       50 |      100 |      100 |                |
   Controller.sol |      100 |       50 |      100 |      100 |                |
   Core.sol       |    89.47 |    54.76 |    78.57 |    86.89 |... 170,171,173 |
-  Math.sol       |    33.33 |       20 |    41.67 |    31.25 |... 51,52,54,55 |
+  Math.sol       |      100 |       50 |    71.43 |    71.43 |          24,32 |
 -----------------|----------|----------|----------|----------|----------------|
-All files        |    86.11 |    44.74 |    72.22 |     81.9 |                |
+All files        |    93.94 |    53.13 |    83.87 |    89.58 |                |
 -----------------|----------|----------|----------|----------|----------------|
-
-> Istanbul reports written to ./coverage/ and ./coverage.json
 ```
 
 ## Run
