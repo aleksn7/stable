@@ -47,7 +47,7 @@ docker-compose up -d
 
 ### Attach to container
 ```
-docker exec -it dai-hardhat-1 bash 
+docker exec -it stable-hardhat-1 bash 
 ```
 
 ### CD to the project directory
